@@ -22,7 +22,7 @@ from typing import List
 from zoneinfo import ZoneInfo
 from botocore.exceptions import ClientError, BotoCoreError
 from botocore.config import Config
-from SandboxLoggingClass import LoggingClass
+from LoggingClass import LoggingClass
 
 # ----------------------------------------------------------------------
 # Constant Definitions
@@ -187,7 +187,7 @@ def get_cost_aggregation(arg_account_list, arg_start_utc_str, end_utc_str):
 # ----------------------------------------------------------------------
 # Entry Point (Program Start Point)
 # ----------------------------------------------------------------------
-def lambda_handler(event, context):
+def lambda_handler_entrypoint(event, context):
 
     log.debug("{}() Start processing".format(sys._getframe().f_code.co_name))
 
