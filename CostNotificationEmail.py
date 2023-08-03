@@ -236,11 +236,12 @@ def get_account_cost_ranking(arg_account_name_dict: Dict[str, str], arg_start_ut
 
     total_cost_int = 0
     account_cost_ranking_message = []
+    unit = ""
 
     for index, group in enumerate(sorted(
         [group for group in response['ResultsByTime'][0]['Groups'] if group['Keys'][0] != 'Tax'],
         key=lambda x: float(x['Metrics']['UnblendedCost']['Amount']),
-        reverse=True)[:2]):
+        reverse=True)[:3]):
 
         rank = "TOP" + str(index + 1)
         account_id = group['Keys'][0]
@@ -254,7 +255,7 @@ def get_account_cost_ranking(arg_account_name_dict: Dict[str, str], arg_start_ut
     for group in response['ResultsByTime'][0]['Groups']:
         total_cost_int += int(float(group['Metrics']['UnblendedCost']['Amount']))
     
-    total_cost = str(total_cost_int)
+    total_cost = str(total_cost_int) + unit
 
     return total_cost, account_cost_ranking_message
 
@@ -288,10 +289,17 @@ def sns_publish(arg_start_utc_str, arg_service_cost_ranking_message, arg_total_c
 
 
     # 件名と本文を作成
-    # sns_message = '\n'.join(arg_service_cost_ranking_message)
-    # sns_subject = "【Cost Notification】{}".format(arg_start_utc_str)
-    sns_message = '\n'.join(arg_account_cost_ranking_message)
-    sns_subject = "Total Cost : {}".format(arg_total_cost)
+    service_cost_message = '\n'.join(arg_service_cost_ranking_message)
+    account_cost_message = '\n'.join(arg_account_cost_ranking_message)
+    total_cost_message = "【Total Cost】\n{}".format(arg_total_cost)
+
+    sns_subject = "【Cost Notification】{}".format(arg_start_utc_str)
+    sns_message = total_cost_message + "\n"
+    sns_message += "\n【Account Cost Ranking】"
+    sns_message += "\n{}".format(account_cost_message)
+    sns_message += "\n"
+    sns_message += "\n【Service Cost Ranking】"
+    sns_message += "\n{}".format(service_cost_message)
 
     # メール送信
     log.debug("SNS メール送信 本文 : {}.....".format(arg_service_cost_ranking_message[0]))
