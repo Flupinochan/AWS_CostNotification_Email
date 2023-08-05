@@ -6,7 +6,7 @@
 ▼Version
     1.0
 ▼Execution Environment
-    Python 3.10 / For Lambda
+    Python 3.11 / For Lambda
 ▼Overview
     Python for aggregating the cost of the current month for the accounts set in the AWS Budgets filter, and sending it via email
 ▼Remarks
