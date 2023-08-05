@@ -8,7 +8,7 @@
 ▼Execution Environment
     Python 3.10 / For Lambda
 ▼Overview
-    Python for aggregating the cost of the current month for the accounts set in the AWS Budgets filter, and sending it via email
+    Python for aggregating the cost of the current month for the accounts set in the AWS Budgets filter, and sending it via LINE
 ▼Remarks
     Need to set linked accounts in the filter for Budgets
 """
@@ -17,6 +17,8 @@ import datetime
 import os
 import sys
 import boto3
+import urllib.request
+import urllib.parse
 
 from typing import Dict, List, Tuple
 from zoneinfo import ZoneInfo
@@ -47,8 +49,8 @@ try:
     # Budget Name
     BUDGET_NAME = os.environ['BUDGET_NAME']
 
-    # SNS ARN
-    SNS_TOPIC_ARN = os.environ['SNS_TOPIC_ARN']
+    # LINE Notify Token
+    LINE_NOTIFY_TOKEN = os.environ['LINE_NOTIFY_TOKEN']
 
 except KeyError as e:
     raise Exception("Required environment variable not set : {}".format(e))
@@ -72,9 +74,6 @@ config = Config(
 client_budgets = boto3.client('budgets', config=config)
 # Cost Explorer API settings
 client_cost_explorer = boto3.client('ce', config=config)
-# SNS API settings
-resource_sns = boto3.resource('sns', config=config)
-sns_topic = resource_sns.Topic(SNS_TOPIC_ARN)
 # Organizations API settings
 client_organizations = boto3.client('organizations')
 
@@ -116,7 +115,7 @@ def main():
     total_cost, account_cost_ranking_message = get_account_cost_ranking(account_name_dict, start_utc_str, end_utc_str)
 
     # Send cost ranking
-    sns_publish(start_utc_str, service_cost_ranking_message, total_cost, account_cost_ranking_message)
+    send_line(start_utc_str, service_cost_ranking_message, total_cost, account_cost_ranking_message)
 
     log.debug("{}() End processing".format(sys._getframe().f_code.co_name))
 
@@ -326,36 +325,47 @@ def get_account_cost_ranking(arg_account_name_dict: Dict[str, str], arg_start_ut
 
 
 # ----------------------------------------------------------------------
-# SNS(send email)
+# Send LINE
 # ----------------------------------------------------------------------
-def sns_publish(arg_start_utc_str, arg_service_cost_ranking_message, arg_total_cost, arg_account_cost_ranking_message) -> None:
+def send_line(arg_start_utc_str, arg_service_cost_ranking_message, arg_total_cost, arg_account_cost_ranking_message) -> None:
 
     log.debug("{}() Start processing".format(sys._getframe().f_code.co_name))
 
-
-
-    # Create subject and message
+    # Create message
     service_cost_message = '\n'.join(arg_service_cost_ranking_message)
     account_cost_message = '\n'.join(arg_account_cost_ranking_message)
 
-    sns_subject = "【Cost Notification】{}".format(arg_start_utc_str[:-3])
-    sns_message = """【Total Cost】
+    line_message = """{}
+【Total Cost】
 {}
 
 【Account Cost Ranking】
 {}
 
 【Service Cost Ranking】
-{}""".format(arg_total_cost, account_cost_message, service_cost_message)
+{}""".format(arg_start_utc_str[:-3], arg_total_cost, account_cost_message, service_cost_message)
 
-    # Send email
-    log.debug("SNS subject : {}.....".format(arg_service_cost_ranking_message[0]))
-    log.info("SNS body : {}".format(sns_subject))
+    # LINE Notify API URL
+    url = "https://notify-api.line.me/api/notify"
 
-    sns_topic.publish(
-        Message = sns_message,
-        Subject = sns_subject
-    )
+    # Send LINE
+    headers = {
+        'Authorization': 'Bearer ' + LINE_NOTIFY_TOKEN,
+        'Content-Type': 'application/x-www-form-urlencoded'
+    }
+    data = {'message': line_message}
+    encoded_data = urllib.parse.urlencode(data).encode('utf-8')
+    req = urllib.request.Request(url, data=encoded_data, headers=headers, method='POST')
+
+    try:
+        with urllib.request.urlopen(req) as res:
+            response_body = res.read().decode('utf-8')
+            log.info("LINE Notify Response: {}".format(response_body))
+
+    except urllib.error.HTTPError as err:
+        log.error("HTTP error occurred: {}".format(err.code))
+    except Exception as err:
+        log.error("An error occurred: {}".format(err))
 
     log.debug("{}() End processing".format(sys._getframe().f_code.co_name))
 
