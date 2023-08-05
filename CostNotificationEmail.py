@@ -28,24 +28,29 @@ from LoggingClass import LoggingClass
 # Constant Definitions
 # ----------------------------------------------------------------------
 
-# Time zones JST, UTC
-JST = ZoneInfo("Asia/Tokyo")
-UTC = ZoneInfo("UTC")
+try:
 
-# Log Level (default is INFO)
-LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
+    # Time zones JST, UTC
+    JST = ZoneInfo("Asia/Tokyo")
+    UTC = ZoneInfo("UTC")
 
-# Retry count when using client or resource API
-RETRY_COUNT = int(os.environ.get('RETRY_COUNT', 3))
+    # Log Level (default is INFO)
+    LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 
-# Master AccountID (String Type)
-ACCOUNT_ID = os.environ['ACCOUNT_ID']
+    # Retry count when using client or resource API
+    RETRY_COUNT = int(os.environ.get('RETRY_COUNT', 3))
 
-# Budget Name
-BUDGET_NAME = os.environ['BUDGET_NAME']
+    # Master AccountID (String Type)
+    ACCOUNT_ID = os.environ['ACCOUNT_ID']
 
-# SNS ARN
-SNS_TOPIC_ARN = os.environ['SNS_TOPIC_ARN']
+    # Budget Name
+    BUDGET_NAME = os.environ['BUDGET_NAME']
+
+    # SNS ARN
+    SNS_TOPIC_ARN = os.environ['SNS_TOPIC_ARN']
+
+except KeyError as e:
+    raise Exception("Required environment variable not set : {}".format(e))
 
 # ----------------------------------------------------------------
 # Global Variable Definitions
@@ -60,7 +65,6 @@ config = Config(
     }
 )
 
-# Both are global services, so region setting is ignored
 # Budgets API settings
 client_budgets = boto3.client('budgets', config=config)
 # Cost Explorer API settings
@@ -82,6 +86,8 @@ log = logger.get_logger()
 # Usage example
 # log.info("Test")
 
+
+
 # ----------------------------------------------------------------------
 # Main Processing
 # ----------------------------------------------------------------------
@@ -90,13 +96,14 @@ def main():
     # sys._getframe().f_code.co_name) will give the function name
     log.debug("{}() Start processing".format(sys._getframe().f_code.co_name))
 
-    # Get the accounts for cost aggregation
+    # Get the accountIDs for cost aggregation
     account_list = get_account_list()
 
-    # Get the beginning of the month required to fetch this month's cost
+    # Get today and the beginning of the month required to fetch this month's cost
+    # The cost is the sum of expenses from the beginning of the month until today
     start_utc_str, end_utc_str = time_processing()
 
-    # Get account name
+    # Get account names
     account_name_dict = get_account_name(account_list)
 
     # Get cost ranking
@@ -108,14 +115,15 @@ def main():
 
     log.debug("{}() End processing".format(sys._getframe().f_code.co_name))
 
+
+
 # ----------------------------------------------------------------------
-# Get Account Information
+# Get AccountIDs Information
 # ----------------------------------------------------------------------
 def get_account_list() -> List[str]:
 
     log.debug("{}() Start processing".format(sys._getframe().f_code.co_name))
 
-    # Account list
     account_list = []
 
     response = client_budgets.describe_budget(
@@ -123,16 +131,17 @@ def get_account_list() -> List[str]:
         BudgetName=BUDGET_NAME
     )
 
-    # Get AccountID set in Budget's filter
+    # Get AccountIDs set in Budget's filter
     for values in response['Budget']['CostFilters'].values():
         for value in values:
                 account_list.append(value)
 
     log.debug("Cost aggregation accounts : {}".format(', '.join(account_list)))
-
     log.debug("{}() End processing".format(sys._getframe().f_code.co_name))
 
     return account_list
+
+
 
 # ----------------------------------------------------------------------
 # Time Processing
@@ -141,18 +150,41 @@ def time_processing() -> Tuple[str, str]:
 
     log.debug("{}() Start processing".format(sys._getframe().f_code.co_name))
 
-    # Beginning of the month, today's date in UTC   ########### Last month for test
+    # Beginning of the month, today's date in UTC   ########### Last month(-1) for test ###########
     now = datetime.datetime.now(UTC)
     start_utc = datetime.datetime(now.year, now.month-1, 1)
     start_utc_str = start_utc.strftime('%Y-%m-%d')
     end_utc_str = now.strftime('%Y-%m-%d')
 
-    log.debug("UTC start of the month (str) : {}".format(start_utc_str))
-    log.debug("UTC today (str) : {}".format(end_utc_str))
-
+    log.debug("UTC Beginning of the month (str) : {}".format(start_utc_str))
+    log.debug("UTC Today (str) : {}".format(end_utc_str))
     log.debug("{}() End processing".format(sys._getframe().f_code.co_name))
 
     return start_utc_str, end_utc_str
+
+
+
+# ----------------------------------------------------------------------
+# Get Account Names
+# ----------------------------------------------------------------------
+def get_account_name(arg_account_list: List[str]) -> Dict[str, str]:
+
+    log.debug("{}() Start processing".format(sys._getframe().f_code.co_name))
+
+    account_name_dict = {}
+
+    paginator = client_organizations.get_paginator('list_accounts')
+    for page in paginator.paginate():
+        for account in page['Accounts']:
+            for accountId in arg_account_list:
+                if account['Id'] == accountId:
+                    account_name_dict[account['Id']] = account['Name']
+
+    log.debug("{}() End processing".format(sys._getframe().f_code.co_name))
+
+    return account_name_dict
+
+
 
 # ----------------------------------------------------------------------
 # Get Service Cost Ranking
@@ -184,21 +216,34 @@ def get_service_cost_ranking(arg_account_list: List[str], arg_start_utc_str: str
         }
     )
 
-    # Array for storing data
     service_cost_ranking_message = []
+
+    """
+    ・sorted(iterable, key=None, reverse=False)[:5]
+    Taking five from the sorted list by the slice
+
+    ・[Processing Result for Element in Iterable if Condition]
+    Using list comprehension, a new list is created.
+    Create a List excluding taxes
+    1. Iterating through the elements of an iterable (such as a list, dictionary, tuple, or any other iterable object) using a for loop,
+    2. Checking the elements against a conditional expression using an if statement,
+    3. Including only the elements that satisfy the condition in the new list.
+
+    ・key=lambda x: float(x['Metrics']['UnblendedCost']['Amount'])
+    By combining the sorted function with lambda, you can sort the elements in a list based on any key
+    """
 
     # Top 5 High Cost Services
     for index, service in enumerate(sorted(
             [group for group in response['ResultsByTime'][0]['Groups'] if group['Keys'][0] != 'Tax'],
             key=lambda x: float(x['Metrics']['UnblendedCost']['Amount']),
             reverse=True)[:5]):
-        
+
         rank = "TOP" + str(index + 1)
         service_cost_str_float = service['Metrics']['UnblendedCost']['Amount']
         service_cost = service_cost_str_float.split('.')[0]
         unit = service['Metrics']['UnblendedCost']['Unit']
         service_name = service['Keys'][0]
-
 
         message = "{} {}{} : {}".format(rank, service_cost, unit, service_name)
         service_cost_ranking_message.append(message)
@@ -208,6 +253,7 @@ def get_service_cost_ranking(arg_account_list: List[str], arg_start_utc_str: str
     log.debug("{}() End processing".format(sys._getframe().f_code.co_name))
 
     return service_cost_ranking_message
+
 
 
 # ----------------------------------------------------------------------
@@ -251,32 +297,18 @@ def get_account_cost_ranking(arg_account_name_dict: Dict[str, str], arg_start_ut
 
         message = "{} {}{} : {}({})".format(rank, account_cost, unit, arg_account_name_dict[account_id], account_id)
         account_cost_ranking_message.append(message)
-    
+
     for group in response['ResultsByTime'][0]['Groups']:
         total_cost_int += int(float(group['Metrics']['UnblendedCost']['Amount']))
-    
+
     total_cost = str(total_cost_int) + unit
+
+    log.debug("{}() End processing".format(sys._getframe().f_code.co_name))
 
     return total_cost, account_cost_ranking_message
 
 
 
-
-# ----------------------------------------------------------------------
-# Get Account Name
-# ----------------------------------------------------------------------
-def get_account_name(arg_account_list) -> Dict[str, str]:
-
-    account_name_dict = {}
-
-    paginator = client_organizations.get_paginator('list_accounts')
-    for page in paginator.paginate():
-        for account in page['Accounts']:
-            for accountId in arg_account_list:
-                if account['Id'] == accountId:
-                    account_name_dict[account['Id']] = account['Name']
-
-    return account_name_dict
 
 
 # ----------------------------------------------------------------------
