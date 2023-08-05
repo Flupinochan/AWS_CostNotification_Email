@@ -5,6 +5,8 @@
 - Budgets の filters を使用し、Linked Account を設定している  
   [AWS Budgets Document](https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-create-filters.html#:~:text=.-,Linked%20Account,-Choose%20an%20AWS)
 - `CostNotificationEmail.py` を使用する場合は、AWS SNS の設定がしてあること
+- `CostNotificationLINE.py` を使用する場合は、LINE Notify Tokenが発行してあること  
+  [LINE Notify](https://notify-bot.line.me/my/)
 
 ## 利用方法
 

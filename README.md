@@ -4,7 +4,9 @@
 - You are using AWS multi-account (Organizations) environment
 - You have set up Linked Account using filters in Budgets  
   [AWS Budgets Document](https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-create-filters.html#:~:text=.-,Linked%20Account,-Choose%20an%20AWS)
-- If you are using `CostNotificationEmail.py`, please preconfigure SNS settings.
+- If you are using `CostNotificationEmail.py`, set up AWS SNS in advance.
+- If you are using `CostNotificationLINE.py`, LINE Notify Token must be issued in advance.  
+  [LINE Notify](https://notify-bot.line.me/my/)
 
 ## Instructions
 
