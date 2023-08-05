@@ -24,14 +24,15 @@ from botocore.exceptions import ClientError, BotoCoreError
 from botocore.config import Config
 from LoggingClass import LoggingClass
 
+
+
 # ----------------------------------------------------------------------
 # Constant Definitions
 # ----------------------------------------------------------------------
 
 try:
 
-    # Time zones JST, UTC
-    JST = ZoneInfo("Asia/Tokyo")
+    # Time zones UTC
     UTC = ZoneInfo("UTC")
 
     # Log Level (default is INFO)
@@ -51,6 +52,8 @@ try:
 
 except KeyError as e:
     raise Exception("Required environment variable not set : {}".format(e))
+
+
 
 # ----------------------------------------------------------------
 # Global Variable Definitions
@@ -74,6 +77,8 @@ resource_sns = boto3.resource('sns', config=config)
 sns_topic = resource_sns.Topic(SNS_TOPIC_ARN)
 # Organizations API settings
 client_organizations = boto3.client('organizations')
+
+
 
 # ----------------------------------------------------------------------
 # Logger Configuration
@@ -118,7 +123,7 @@ def main():
 
 
 # ----------------------------------------------------------------------
-# Get AccountIDs Information
+# Get AccountIDs
 # ----------------------------------------------------------------------
 def get_account_list() -> List[str]:
 
@@ -173,6 +178,7 @@ def get_account_name(arg_account_list: List[str]) -> Dict[str, str]:
 
     account_name_dict = {}
 
+    # Get the Account Names corresponding to the AccountID obtained from Budgets using AWS Organizations
     paginator = client_organizations.get_paginator('list_accounts')
     for page in paginator.paginate():
         for account in page['Accounts']:
@@ -180,6 +186,7 @@ def get_account_name(arg_account_list: List[str]) -> Dict[str, str]:
                 if account['Id'] == accountId:
                     account_name_dict[account['Id']] = account['Name']
 
+    log.debug("Account Names : {}".format(','.join(account_name_dict.values())))
     log.debug("{}() End processing".format(sys._getframe().f_code.co_name))
 
     return account_name_dict
@@ -257,7 +264,7 @@ def get_service_cost_ranking(arg_account_list: List[str], arg_start_utc_str: str
 
 
 # ----------------------------------------------------------------------
-# Get Account Cost Ranking
+# Get Account Cost Ranking & Total Cost
 # ----------------------------------------------------------------------
 def get_account_cost_ranking(arg_account_name_dict: Dict[str, str], arg_start_utc_str: str, end_utc_str: str) -> List[str]:
 
@@ -280,7 +287,8 @@ def get_account_cost_ranking(arg_account_name_dict: Dict[str, str], arg_start_ut
         ]
     )
 
-    total_cost_int = 0
+
+    # Top 3 High Cost Accounts
     account_cost_ranking_message = []
     unit = ""
 
@@ -298,16 +306,22 @@ def get_account_cost_ranking(arg_account_name_dict: Dict[str, str], arg_start_ut
         message = "{} {}{} : {}({})".format(rank, account_cost, unit, arg_account_name_dict[account_id], account_id)
         account_cost_ranking_message.append(message)
 
+        log.debug(message)
+
+
+    # Get the total cost of accounts taken from Budgets
+    total_cost_float = 0.0
+
     for group in response['ResultsByTime'][0]['Groups']:
-        total_cost_int += int(float(group['Metrics']['UnblendedCost']['Amount']))
+        total_cost_float += float(group['Metrics']['UnblendedCost']['Amount'])
 
-    total_cost = str(total_cost_int) + unit
+    total_cost = str(total_cost_float).split('.')[0] + unit
 
+    log.debug("Total Cost : {}".format(total_cost))
     log.debug("{}() End processing".format(sys._getframe().f_code.co_name))
 
+
     return total_cost, account_cost_ranking_message
-
-
 
 
 
@@ -320,22 +334,23 @@ def sns_publish(arg_start_utc_str, arg_service_cost_ranking_message, arg_total_c
 
 
 
-    # 件名と本文を作成
+    # Create subject and message
     service_cost_message = '\n'.join(arg_service_cost_ranking_message)
     account_cost_message = '\n'.join(arg_account_cost_ranking_message)
-    total_cost_message = "【Total Cost】\n{}".format(arg_total_cost)
 
-    sns_subject = "【Cost Notification】{}".format(arg_start_utc_str)
-    sns_message = total_cost_message + "\n"
-    sns_message += "\n【Account Cost Ranking】"
-    sns_message += "\n{}".format(account_cost_message)
-    sns_message += "\n"
-    sns_message += "\n【Service Cost Ranking】"
-    sns_message += "\n{}".format(service_cost_message)
+    sns_subject = "【Cost Notification】{}".format(arg_start_utc_str[:-3])
+    sns_message = """【Total Cost】
+{}
 
-    # メール送信
-    log.debug("SNS メール送信 本文 : {}.....".format(arg_service_cost_ranking_message[0]))
-    log.info("SNS メール送信 件名 : {}".format(sns_subject))
+【Account Cost Ranking】
+{}
+
+【Service Cost Ranking】
+{}""".format(arg_total_cost, account_cost_message, service_cost_message)
+
+    # Send email
+    log.debug("SNS subject : {}.....".format(arg_service_cost_ranking_message[0]))
+    log.info("SNS body : {}".format(sns_subject))
 
     sns_topic.publish(
         Message = sns_message,
@@ -375,5 +390,5 @@ def lambda_handler_entrypoint(event, context):
         log.error(error_message, exc_info=True)
 
     finally:
-        log.debug("{}() Process end".format(sys._getframe().f_code.co_name))
+        log.debug("{}() End processing".format(sys._getframe().f_code.co_name))
         log.info('Processing completed successfully')
