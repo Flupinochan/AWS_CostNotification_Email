@@ -10,7 +10,7 @@
 ▼Overview
     Class for logging
 ▼Remarks
-    None
+    Time Zone is JST
 """
 
 import logging
