@@ -349,8 +349,8 @@ def sns_publish(arg_start_utc_str, arg_service_cost_ranking_message, arg_total_c
 {}""".format(arg_total_cost, account_cost_message, service_cost_message)
 
     # Send email
-    log.debug("SNS subject : {}.....".format(arg_service_cost_ranking_message[0]))
-    log.info("SNS body : {}".format(sns_subject))
+    log.info("SNS subject : {}.....".format(sns_subject))
+    log.debug("SNS body : {}".format(sns_message))
 
     sns_topic.publish(
         Message = sns_message,
